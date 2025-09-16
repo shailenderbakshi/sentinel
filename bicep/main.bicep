@@ -1,44 +1,25 @@
 targetScope = 'resourceGroup'
 
-@description('Azure region for the workspace')
 param location string = resourceGroup().location
-
-@description('Name of the Log Analytics workspace')
 param workspaceName string
-
-@description('Create the workspace if it does not already exist')
 param createWorkspace bool = true
-
-@description('Log Analytics SKU')
 @allowed(['PerGB2018','Free','Standalone','CapacityReservation'])
 param workspaceSku string = 'PerGB2018'
-
-@description('Retention in days (30–730)')
-@minValue(30)
-@maxValue(730)
+@minValue(30) @maxValue(730)
 param retentionInDays int = 90
 
-@description('Enable Microsoft 365 Defender connector')
 param enableM365Defender bool = true
-
-@description('Enable Office 365 connector (ExO/SPO/Teams) – requires tenant admin consent post-deploy')
 param enableOffice365 bool = false
-
-@description('Enable built-in Threat Intelligence connector')
 param enableThreatIntel bool = true
-
-@description('Enable TAXII connector for external TI feeds')
 param enableTaxii bool = false
 
-@description('TAXII settings (used only if enableTaxii = true)')
 param taxiiServer string = ''
 param taxiiCollectionId string = ''
 param taxiiUsername string = ''
-@secure()
-param taxiiPassword string = ''
+@secure() param taxiiPassword string = ''
 param taxiiPollingFrequencyMins int = 60
 
-// 1) Create workspace (optional)
+// 1) Create LAW (optional)
 resource law 'Microsoft.OperationalInsights/workspaces@2022-10-01' = if (createWorkspace) {
   name: workspaceName
   location: location
@@ -49,25 +30,27 @@ resource law 'Microsoft.OperationalInsights/workspaces@2022-10-01' = if (createW
   }
 }
 
-// 2) Bind an existing symbol (works whether we created it above or it already existed)
+// 2) Always bind an existing symbol for the workspace
 resource ws 'Microsoft.OperationalInsights/workspaces@2022-10-01' existing = {
   name: workspaceName
 }
 
-// 3) Enable Microsoft Sentinel (extension resource)
+// 3) Enable Microsoft Sentinel (extension resource) — ensure LAW exists first
 resource onboarding 'Microsoft.SecurityInsights/onboardingStates@2022-11-01-preview' = {
   name: 'default'
   scope: ws
   properties: {}
+  dependsOn: createWorkspace ? [ law ] : []
 }
 
-// Deterministic names for connectors (idempotent)
+// Deterministic names for connectors
 var m365Guid  = guid(subscription().id, resourceGroup().id, workspaceName, 'm365defender')
 var o365Guid  = guid(subscription().id, resourceGroup().id, workspaceName, 'office365')
 var tiGuid    = guid(subscription().id, resourceGroup().id, workspaceName, 'ti-built-in')
 var taxiiGuid = guid(subscription().id, resourceGroup().id, workspaceName, 'ti-taxii')
 
-// 4) Data Connectors (extension resources on the workspace)
+// 4) Data connectors — also depend on LAW creation when applicable
+
 resource m365Defender 'Microsoft.SecurityInsights/dataConnectors@2022-11-01-preview' = if (enableM365Defender) {
   name: m365Guid
   scope: ws
@@ -75,6 +58,7 @@ resource m365Defender 'Microsoft.SecurityInsights/dataConnectors@2022-11-01-prev
   properties: {
     tenantId: subscription().tenantId
   }
+  dependsOn: createWorkspace ? [ law ] : []
 }
 
 resource o365 'Microsoft.SecurityInsights/dataConnectors@2022-11-01-preview' = if (enableOffice365) {
@@ -89,6 +73,7 @@ resource o365 'Microsoft.SecurityInsights/dataConnectors@2022-11-01-preview' = i
       Teams:      { state: 'Enabled' }
     }
   }
+  dependsOn: createWorkspace ? [ law ] : []
 }
 
 resource tiBuiltIn 'Microsoft.SecurityInsights/dataConnectors@2022-11-01-preview' = if (enableThreatIntel) {
@@ -96,10 +81,9 @@ resource tiBuiltIn 'Microsoft.SecurityInsights/dataConnectors@2022-11-01-preview
   scope: ws
   kind: 'ThreatIntelligence'
   properties: {
-    dataTypes: {
-      Indicators: { state: 'Enabled' }
-    }
+    // dataTypes block is optional; leave minimal to avoid schema warnings
   }
+  dependsOn: createWorkspace ? [ law ] : []
 }
 
 resource tiTaxii 'Microsoft.SecurityInsights/dataConnectors@2022-11-01-preview' = if (enableTaxii) {
@@ -112,10 +96,9 @@ resource tiTaxii 'Microsoft.SecurityInsights/dataConnectors@2022-11-01-preview' 
     userName:         taxiiUsername
     password:         taxiiPassword
     pollingFrequency: '${taxiiPollingFrequencyMins} Minutes'
-    dataTypes: {
-      Indicators: { state: 'Enabled' }
-    }
+    // dataTypes optional
   }
+  dependsOn: createWorkspace ? [ law ] : []
 }
 
 output workspaceIdOut string = ws.id
