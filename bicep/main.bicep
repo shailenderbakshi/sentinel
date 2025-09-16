@@ -1,11 +1,13 @@
 targetScope = 'resourceGroup'
 
-@description('Tenant ID taken directly from deployment context')
+@description('Tenant ID for Entra ID (AAD). Defaults to current subscription tenant.')
 param tenantId string = subscription().tenantId
 
-// fixed values, no YAML params required
-var location = 'uksouth'
-var workspaceName = 'law-sentinel-jorgebernhardt.com'
+// fixed values
+var location   = 'uksouth'
+var envTag     = 'jorgebernhardt.com'           // tag value (can keep dots here)
+var envForName = toLower(replace(envTag, '.', '-')) // use hyphens for resource names
+var workspaceName = 'law-sentinel-${envForName}'    // e.g., law-sentinel-jorgebernhardt-com
 
 // ---------------------------
 // Log Analytics Workspace
@@ -18,7 +20,7 @@ resource workspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
     retentionInDays: 90
   }
   tags: {
-    environment: 'jorgebernhardt.com'
+    environment: envTag
     bicep: 'true'
   }
 }
@@ -59,5 +61,6 @@ resource aadConnector 'Microsoft.SecurityInsights/dataConnectors@2022-11-01-prev
 // Outputs
 // ---------------------------
 output workspaceId string = workspace.id
+output workspaceName string = workspace.name
 output sentinelId string = sentinel.id
-output connectorId string = aadConnector.id
+output aadConnectorId string = aadConnector.id
