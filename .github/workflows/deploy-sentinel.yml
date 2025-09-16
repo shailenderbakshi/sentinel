@@ -11,7 +11,7 @@ permissions:
 
 env:
   LOCATION: uksouth
-  RESOURCE_GROUP: rg-secops-uks   # change to your RG name
+  RESOURCE_GROUP: rg-secops-uks   # your RG name
 
 jobs:
   deploy:
@@ -23,6 +23,10 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Ensure resource group exists (create if missing)
+        run: |
+          az group create -n "${{ env.RESOURCE_GROUP }}" -l "${{ env.LOCATION }}"
+
       - uses: azure/arm-deploy@v2
         with:
           scope: resourcegroup
@@ -30,6 +34,3 @@ jobs:
           resourceGroupName: ${{ env.RESOURCE_GROUP }}
           region: ${{ env.LOCATION }}
           template: bicep/main.bicep
-          parameters: >
-            tenantId=${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
-            location=${{ env.LOCATION }}
