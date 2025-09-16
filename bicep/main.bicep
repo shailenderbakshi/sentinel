@@ -1,63 +1,91 @@
-// RG-scope: deploy Log Analytics Workspace and enable Microsoft Sentinel
+targetScope = 'resourceGroup'
 
-@description('Azure region')
-param location string = resourceGroup().location
+@description('Location for the Log Analytics workspace and Sentinel solution')
+param location string = 'uksouth'
 
-@description('Log Analytics workspace name')
-param workspaceName string = 'law-sentinel-${uniqueString(resourceGroup().id)}'
+@description('Base name for resources')
+param baseName string = 'sec-law-uks'
 
-@description('Retention in days (30–730)')
-@minValue(30)
-@maxValue(730)
-param retentionDays int = 30
+var workspaceName = '${baseName}-law'
+var solutionName  = 'SecurityInsights(${workspaceName})'
 
-@description('Workspace SKU')
-@allowed([
-  'PerGB2018'
-  'PerNode'
-  'Free'
-  'Standalone'
-  'CapacityReservation'
-  'LACluster'
-])
-param workspaceSku string = 'PerGB2018'
-
-@description('Tags to apply')
-param tags object = {
-  env: 'dev'
-  iac: 'bicep'
-}
-
+// Log Analytics Workspace
 resource law 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name: workspaceName
   location: location
-  tags: tags
   properties: {
-    retentionInDays: retentionDays
-    features: {
-      searchVersion: 1
-    }
     sku: {
-      name: workspaceSku
+      name: 'PerGB2018'
     }
+    retentionInDays: 30
+    features: {
+      enableLogAccessUsingOnlyResourcePermissions: true
+    }
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
   }
 }
 
+// Microsoft Sentinel enablement (Solution)
 resource sentinel 'Microsoft.OperationsManagement/solutions@2015-11-01-preview' = {
-  name: 'SecurityInsights(${law.name})'
+  name: solutionName
   location: location
-  tags: tags
   plan: {
-    name: 'SecurityInsights(${law.name})'
-    product: 'OMSGallery/SecurityInsights'
+    name: solutionName
     publisher: 'Microsoft'
-    promotionCode: ''
+    product: 'OMSGallery/SecurityInsights'
   }
   properties: {
     workspaceResourceId: law.id
   }
 }
 
-output workspaceId string = law.id
-output workspaceNameOut string = law.name
-output sentinelSolutionName string = sentinel.name
+// ---------------------------
+// Sentinel Data Connectors
+// ---------------------------
+
+// Entra ID (Azure AD) connector
+resource aadConnector 'Microsoft.OperationalInsights/workspaces/providers/dataConnectors@2022-11-01-preview' = {
+  name: '${law.name}/Microsoft.SecurityInsights/AADConnector'
+  kind: 'AAD'
+  properties: {
+    tenantId: subscription().tenantId
+    dataTypes: {
+      logs: {
+        state: 'Enabled'
+      }
+    }
+  }
+  dependsOn: [ sentinel ]
+}
+
+// Microsoft 365 (Office 365) connector – Exchange/SharePoint/Teams
+resource o365Connector 'Microsoft.OperationalInsights/workspaces/providers/dataConnectors@2022-11-01-preview' = {
+  name: '${law.name}/Microsoft.SecurityInsights/O365Connector'
+  kind: 'Office365'
+  properties: {
+    tenantId: subscription().tenantId
+    dataTypes: {
+      SharePoint: { state: 'Enabled' }
+      Exchange:  { state: 'Enabled' }
+      Teams:     { state: 'Enabled' }
+    }
+  }
+  dependsOn: [ sentinel ]
+}
+
+// Microsoft Defender XDR (MTP) connector
+resource mdxdrConnector 'Microsoft.OperationalInsights/workspaces/providers/dataConnectors@2022-11-01-preview' = {
+  name: '${law.name}/Microsoft.SecurityInsights/MTPConnector'
+  kind: 'MicrosoftThreatProtection'
+  properties: {
+    tenantId: subscription().tenantId
+    dataTypes: {
+      Alerts: { state: 'Enabled' }
+    }
+  }
+  dependsOn: [ sentinel ]
+}
+
+// (Optional) Example: enable SecurityAlerts table via LA solution packs if needed
+// You can add more connectors later (e.g., AzureActivity via diag settings at sub-scope)
