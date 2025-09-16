@@ -1,17 +1,14 @@
-name: Deploy Sentinel (Bicep via SPN JSON)
+name: Deploy Sentinel (Bicep, no createWorkspace)
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
-
-permissions:
-  contents: read
+    branches: [ main ]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
@@ -22,47 +19,26 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Show Azure context
-        run: az account show -o table
-
-      - name: Ensure resource group
+      # Option A: deploy using the parameters file (recommended)
+      - name: Deploy RG scope (Workspace + Sentinel)
+        env:
+          RG_NAME: rg-sentinel-demo          # <-- change if you like
         run: |
-          az group create \
-            -n rg-sentinel-demo \
-            -l uksouth -o none
-
-      - name: Deploy RG scope (Workspace + Sentinel + connectors)
-        id: rgdeploy
-        run: |
-          set -euo pipefail
           az deployment group create \
-            -g rg-sentinel-demo \
-            -f bicep/main.bicep \
-            -p workspaceName="law-sentinel-demo" \
-               createWorkspace=true \
-               retentionInDays=90 \
-               enableM365Defender=true \
-               enableOffice365=false \
-               enableThreatIntel=true \
-               enableTaxii=false \
-            -o json > rg_deploy.json
+            --resource-group "$RG_NAME" \
+            --template-file bicep/main.bicep \
+            --parameters @bicep/main.parameters.json
 
-          WORKSPACE_ID=$(jq -r '.properties.outputs.workspaceIdOut.value' rg_deploy.json)
-          echo "workspaceId=$WORKSPACE_ID" >> "$GITHUB_OUTPUT"
-          echo "WorkspaceId: $WORKSPACE_ID"
-
-      - name: Deploy subscription scope (Azure Activity → LAW)
-        run: |
-          az deployment sub create \
-            -l uksouth \
-            -f bicep/sub-azure-activity.bicep \
-            -p workspaceId="${{ steps.rgdeploy.outputs.workspaceId }}" \
-            -o table
-
-      - name: Deploy tenant scope (Entra ID → LAW)
-        run: |
-          az deployment tenant create \
-            -l uksouth \
-            -f bicep/tenant-aad-logs-to-law.bicep \
-            -p workspaceId="${{ steps.rgdeploy.outputs.workspaceId }}" \
-            -o table
+      # ---- Option B (alternative): pass params inline, no parameters file ----
+      # - name: Deploy RG scope (inline params)
+      #   env:
+      #     RG_NAME: rg-sentinel-demo
+      #     AZ_LOCATION: uksouth
+      #   run: |
+      #     az deployment group create \
+      #       --resource-group "$RG_NAME" \
+      #       --template-file bicep/main.bicep \
+      #       --parameters location="$AZ_LOCATION" \
+      #                    workspaceName="law-sentinel-${RG_NAME}" \
+      #                    retentionDays=30 \
+      #                    workspaceSku=PerGB2018
