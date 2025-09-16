@@ -1,56 +1,10 @@
 name: Deploy Sentinel (Bicep via SPN JSON)
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
-    inputs:
-      location:
-        description: "Azure region for RG & deployment records"
-        required: true
-        default: "uksouth"
-      resourceGroup:
-        description: "Target resource group"
-        required: true
-        default: "rg-sentinel-demo"
-      workspaceName:
-        description: "Log Analytics workspace name"
-        required: true
-        default: "law-sentinel-demo"
-      createWorkspace:
-        description: "Create LAW if missing"
-        required: true
-        default: "true"
-      retentionInDays:
-        description: "LAW retention (30-730)"
-        required: true
-        default: "90"
-      enableM365Defender:
-        description: "Enable Microsoft 365 Defender connector"
-        required: true
-        default: "true"
-      enableOffice365:
-        description: "Enable Office 365 (ExO/SPO/Teams) connector (needs consent later)"
-        required: true
-        default: "false"
-      enableThreatIntel:
-        description: "Enable built-in Threat Intelligence connector"
-        required: true
-        default: "true"
-      enableTaxii:
-        description: "Enable TAXII connector"
-        required: true
-        default: "false"
-      taxiiServer:
-        description: "TAXII server URL"
-        required: false
-      taxiiCollectionId:
-        description: "TAXII collection id"
-        required: false
-      taxiiUsername:
-        description: "TAXII username"
-        required: false
-      taxiiPassword:
-        description: "TAXII password (avoid plain text; use secrets)"
-        required: false
 
 permissions:
   contents: read
@@ -74,38 +28,23 @@ jobs:
       - name: Ensure resource group
         run: |
           az group create \
-            -n "${{ github.event.inputs.resourceGroup }}" \
-            -l "${{ github.event.inputs.location }}" -o none
+            -n rg-sentinel-demo \
+            -l uksouth -o none
 
-      - name: Deploy RG scope (Workspace + Sentinel + dataConnectors)
+      - name: Deploy RG scope (Workspace + Sentinel + connectors)
         id: rgdeploy
-        shell: bash
-        env:
-          TAXII_PASSWORD: ${{ github.event.inputs.taxiiPassword }}
         run: |
           set -euo pipefail
-
-          PARAMS=(
-            workspaceName="${{ github.event.inputs.workspaceName }}"
-            createWorkspace=${{ github.event.inputs.createWorkspace }}
-            retentionInDays=${{ github.event.inputs.retentionInDays }}
-            enableM365Defender=${{ github.event.inputs.enableM365Defender }}
-            enableOffice365=${{ github.event.inputs.enableOffice365 }}
-            enableThreatIntel=${{ github.event.inputs.enableThreatIntel }}
-            enableTaxii=${{ github.event.inputs.enableTaxii }}
-            taxiiServer="${{ github.event.inputs.taxiiServer }}"
-            taxiiCollectionId="${{ github.event.inputs.taxiiCollectionId }}"
-            taxiiUsername="${{ github.event.inputs.taxiiUsername }}"
-          )
-
-          if [[ -n "${TAXII_PASSWORD:-}" ]]; then
-            PARAMS+=(taxiiPassword="$TAXII_PASSWORD")
-          fi
-
           az deployment group create \
-            -g "${{ github.event.inputs.resourceGroup }}" \
+            -g rg-sentinel-demo \
             -f bicep/main.bicep \
-            -p "${PARAMS[@]}" \
+            -p workspaceName="law-sentinel-demo" \
+               createWorkspace=true \
+               retentionInDays=90 \
+               enableM365Defender=true \
+               enableOffice365=false \
+               enableThreatIntel=true \
+               enableTaxii=false \
             -o json > rg_deploy.json
 
           WORKSPACE_ID=$(jq -r '.properties.outputs.workspaceIdOut.value' rg_deploy.json)
@@ -115,7 +54,7 @@ jobs:
       - name: Deploy subscription scope (Azure Activity → LAW)
         run: |
           az deployment sub create \
-            -l "${{ github.event.inputs.location }}" \
+            -l uksouth \
             -f bicep/sub-azure-activity.bicep \
             -p workspaceId="${{ steps.rgdeploy.outputs.workspaceId }}" \
             -o table
@@ -123,7 +62,7 @@ jobs:
       - name: Deploy tenant scope (Entra ID → LAW)
         run: |
           az deployment tenant create \
-            -l "${{ github.event.inputs.location }}" \
+            -l uksouth \
             -f bicep/tenant-aad-logs-to-law.bicep \
             -p workspaceId="${{ steps.rgdeploy.outputs.workspaceId }}" \
             -o table
