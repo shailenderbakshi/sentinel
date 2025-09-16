@@ -25,46 +25,39 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Show context
+      # ----- RG scope: LAW + Sentinel + (module) connectors
+      - name: Deploy RG scope (main.bicep)
+        uses: azure/arm-deploy@v2
+        with:
+          scope: resourcegroup
+          subscriptionId: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          resourceGroupName: ${{ secrets.RG_NAME }}
+          region: ${{ env.LOCATION }}
+          template: bicep/main.bicep
+          parameters: >
+            location=${{ env.LOCATION }}
+            baseName=${{ env.BASENAME }}
+
+      # Get LAW ID for sub-scope deployment
+      - name: Resolve LAW resource ID
+        id: law
         run: |
-          az account show
-          echo "RG_NAME=${{ secrets.RG_NAME }}"
-          echo "LOCATION=$LOCATION"
-          echo "BASENAME=$BASENAME"
+          LAW_ID=$(az resource show \
+            --resource-group "${{ secrets.RG_NAME }}" \
+            --resource-type "Microsoft.OperationalInsights/workspaces" \
+            --name "${{ env.BASENAME }}-law" \
+            --query id -o tsv)
+          echo "law_id=$LAW_ID" >> $GITHUB_OUTPUT
+          echo "LAW_ID=$LAW_ID"
 
-      # ---------- RG-scope deployment (LAW + Sentinel + connectors)
-      - name: Deploy RG-scope (main.bicep)
-        uses: azure/cli@v2
+      # ----- Subscription scope: route Azure Activity to LAW (optional)
+      - name: Deploy subscription scope (Azure Activity -> LAW)
+        if: ${{ steps.law.outputs.law_id != '' }}
+        uses: azure/arm-deploy@v2
         with:
-          inlineScript: |
-            az deployment group create \
-              --resource-group "${{ secrets.RG_NAME }}" \
-              --name "sentinel-rg-$(date +%Y%m%d%H%M%S)" \
-              --template-file "bicep/main.bicep" \
-              --parameters location="$LOCATION" baseName="$BASENAME"
-
-      # Capture LAW resource ID as output (optional)
-      - name: Get LAW resource ID
-        id: get_law
-        uses: azure/cli@v2
-        with:
-          inlineScript: |
-            LAW_ID=$(az resource show \
-              --resource-group "${{ secrets.RG_NAME }}" \
-              --resource-type "Microsoft.OperationalInsights/workspaces" \
-              --name "${BASENAME}-law" \
-              --query id -o tsv)
-            echo "law_id=$LAW_ID" >> $GITHUB_OUTPUT
-            echo "LAW_ID=$LAW_ID"
-
-      # ---------- Subscription-scope deployment (Azure Activity -> LAW) [optional]
-      - name: Deploy subscription-scope (Azure Activity to LAW)
-        if: ${{ steps.get_law.outputs.law_id != '' }}
-        uses: azure/cli@v2
-        with:
-          inlineScript: |
-            az deployment sub create \
-              --name "sentinel-sub-$(date +%Y%m%d%H%M%S)" \
-              --location "$LOCATION" \
-              --template-file "bicep/sub-azure-activity.bicep" \
-              --parameters lawResourceId="${{ steps.get_law.outputs.law_id }}"
+          scope: subscription
+          subscriptionId: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          region: ${{ env.LOCATION }}
+          template: bicep/sub-azure-activity.bicep
+          parameters: >
+            lawResourceId='${{ steps.law.outputs.law_id }}'
