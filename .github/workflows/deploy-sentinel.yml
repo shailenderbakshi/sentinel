@@ -1,4 +1,4 @@
-name: Deploy Sentinel (Bicep, no createWorkspace)
+name: Deploy Sentinel (Bicep)
 
 on:
   push:
@@ -19,26 +19,23 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Option A: deploy using the parameters file (recommended)
+      - name: Create RG if missing
+        env:
+          RG_NAME: rg-sentinel-demo      # change if you like
+          AZ_LOCATION: uksouth           # change region if you like
+        run: |
+          az group create -n "$RG_NAME" -l "$AZ_LOCATION"
+
       - name: Deploy RG scope (Workspace + Sentinel)
         env:
-          RG_NAME: rg-sentinel-demo          # <-- change if you like
+          RG_NAME: rg-sentinel-demo
+          AZ_LOCATION: uksouth
         run: |
           az deployment group create \
             --resource-group "$RG_NAME" \
-            --template-file bicep/main.bicep \
-            --parameters @bicep/main.parameters.json
-
-      # ---- Option B (alternative): pass params inline, no parameters file ----
-      # - name: Deploy RG scope (inline params)
-      #   env:
-      #     RG_NAME: rg-sentinel-demo
-      #     AZ_LOCATION: uksouth
-      #   run: |
-      #     az deployment group create \
-      #       --resource-group "$RG_NAME" \
-      #       --template-file bicep/main.bicep \
-      #       --parameters location="$AZ_LOCATION" \
-      #                    workspaceName="law-sentinel-${RG_NAME}" \
-      #                    retentionDays=30 \
-      #                    workspaceSku=PerGB2018
+            --template-file sentinel/bicep/main.bicep \
+            --parameters location="$AZ_LOCATION" \
+                         workspaceName="law-sentinel-${RG_NAME}" \
+                         retentionDays=30 \
+                         workspaceSku=PerGB2018 \
+                         tags='{"env":"dev","iac":"bicep"}'
