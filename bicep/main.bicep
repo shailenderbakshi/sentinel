@@ -52,70 +52,26 @@ resource existingLaw 'Microsoft.OperationalInsights/workspaces@2022-10-01' exist
   name: workspaceName
 }
 
-var workspaceId = createWorkspace ? law.id : existingLaw.id
+// Use a single symbol for the workspace (created or existing)
+var ws = createWorkspace ? law : existingLaw
 
 // ----------------------------------------------------------------------------
-// Enable Microsoft Sentinel on the workspace
+// Enable Microsoft Sentinel (extension resource on the workspace)
 // ----------------------------------------------------------------------------
-resource sentinelOnboarding 'Microsoft.OperationalInsights/workspaces/providers/onboardingStates@2022-11-01-preview' = {
-  name: '${workspaceName}/Microsoft.SecurityInsights/default'
-  scope: resourceId('Microsoft.OperationalInsights/workspaces', workspaceName)
+resource onboarding 'Microsoft.SecurityInsights/onboardingStates@2022-11-01-preview' = {
+  name: 'default'
+  scope: ws
   properties: {}
 }
 
 // ----------------------------------------------------------------------------
-/* Data Connectors (workspace scope) */
+// Data Connectors (extension resources on the workspace)
+// Names must be GUIDs; use deterministic guid() so redeploys are idempotent
 // ----------------------------------------------------------------------------
+var m365Guid   = guid(subscription().id, resourceGroup().id, workspaceName, 'm365defender')
+var o365Guid   = guid(subscription().id, resourceGroup().id, workspaceName, 'office365')
+var tiGuid     = guid(subscription().id, resourceGroup().id, workspaceName, 'ti-built-in')
+var taxiiGuid  = guid(subscription().id, resourceGroup().id, workspaceName, 'ti-taxii')
 
 // Microsoft 365 Defender
-resource m365DefenderConnector 'Microsoft.OperationalInsights/workspaces/providers/dataConnectors@2023-02-01-preview' = if (enableM365Defender) {
-  name: '${workspaceName}/Microsoft.SecurityInsights/${newGuid()}'
-  kind: 'Microsoft365Defender'
-  scope: resourceId('Microsoft.OperationalInsights/workspaces', workspaceName)
-  properties: {
-    tenantId: subscription().tenantId
-  }
-}
-
-// Office 365 (Exchange/SharePoint/Teams)
-resource office365Connector 'Microsoft.OperationalInsights/workspaces/providers/dataConnectors@2023-02-01-preview' = if (enableOffice365) {
-  name: '${workspaceName}/Microsoft.SecurityInsights/${newGuid()}'
-  kind: 'Office365'
-  scope: resourceId('Microsoft.OperationalInsights/workspaces', workspaceName)
-  properties: {
-    tenantId: subscription().tenantId
-    dataTypes: {
-      Exchange:   { state: 'Enabled' }
-      SharePoint: { state: 'Enabled' }
-      Teams:      { state: 'Enabled' }
-    }
-  }
-}
-
-// Threat Intelligence (built-in)
-resource tiConnector 'Microsoft.OperationalInsights/workspaces/providers/dataConnectors@2023-02-01-preview' = if (enableThreatIntel) {
-  name: '${workspaceName}/Microsoft.SecurityInsights/${newGuid()}'
-  kind: 'ThreatIntelligence'
-  scope: resourceId('Microsoft.OperationalInsights/workspaces', workspaceName)
-  properties: {
-    dataTypes: { Indicators: { state: 'Enabled' } }
-  }
-}
-
-// Threat Intelligence (TAXII)
-resource taxiiConnector 'Microsoft.OperationalInsights/workspaces/providers/dataConnectors@2023-02-01-preview' = if (enableTaxii) {
-  name: '${workspaceName}/Microsoft.SecurityInsights/${newGuid()}'
-  kind: 'ThreatIntelligenceTaxii'
-  scope: resourceId('Microsoft.OperationalInsights/workspaces', workspaceName)
-  properties: {
-    taxiiServer:      taxiiServer
-    collectionId:     taxiiCollectionId
-    userName:         taxiiUsername
-    password:         taxiiPassword
-    pollingFrequency: '${taxiiPollingFrequencyMins} Minutes'
-    dataTypes: { Indicators: { state: 'Enabled' } }
-  }
-}
-
-// Output workspace resourceId for downstream sub/tenant deployments
-output workspaceIdOut string = workspaceId
+resource m365Defender 'Microsoft
