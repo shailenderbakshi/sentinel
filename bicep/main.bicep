@@ -36,7 +36,7 @@ param taxiiPassword string = ''
 param taxiiPollingFrequencyMins int = 60
 
 // ----------------------------------------------------------------------------
-// Workspace (create or reference existing)
+// 1) Create workspace (optional)
 // ----------------------------------------------------------------------------
 resource law 'Microsoft.OperationalInsights/workspaces@2022-10-01' = if (createWorkspace) {
   name: workspaceName
@@ -48,15 +48,13 @@ resource law 'Microsoft.OperationalInsights/workspaces@2022-10-01' = if (createW
   }
 }
 
-resource existingLaw 'Microsoft.OperationalInsights/workspaces@2022-10-01' existing = if (!createWorkspace) {
+// 2) Always bind an "existing" symbol to the workspace (works even if we created it above)
+resource ws 'Microsoft.OperationalInsights/workspaces@2022-10-01' existing = {
   name: workspaceName
 }
 
-// Use a single symbol for the workspace (created or existing)
-var ws = createWorkspace ? law : existingLaw
-
 // ----------------------------------------------------------------------------
-// Enable Microsoft Sentinel (extension resource on the workspace)
+// 3) Enable Microsoft Sentinel (extension resource on the workspace)
 // ----------------------------------------------------------------------------
 resource onboarding 'Microsoft.SecurityInsights/onboardingStates@2022-11-01-preview' = {
   name: 'default'
@@ -65,13 +63,62 @@ resource onboarding 'Microsoft.SecurityInsights/onboardingStates@2022-11-01-prev
 }
 
 // ----------------------------------------------------------------------------
-// Data Connectors (extension resources on the workspace)
+// 4) Data Connectors (extension resources on the workspace)
 // Names must be GUIDs; use deterministic guid() so redeploys are idempotent
 // ----------------------------------------------------------------------------
-var m365Guid   = guid(subscription().id, resourceGroup().id, workspaceName, 'm365defender')
-var o365Guid   = guid(subscription().id, resourceGroup().id, workspaceName, 'office365')
-var tiGuid     = guid(subscription().id, resourceGroup().id, workspaceName, 'ti-built-in')
-var taxiiGuid  = guid(subscription().id, resourceGroup().id, workspaceName, 'ti-taxii')
+var m365Guid  = guid(subscription().id, resourceGroup().id, workspaceName, 'm365defender')
+var o365Guid  = guid(subscription().id, resourceGroup().id, workspaceName, 'office365')
+var tiGuid    = guid(subscription().id, resourceGroup().id, workspaceName, 'ti-built-in')
+var taxiiGuid = guid(subscription().id, resourceGroup().id, workspaceName, 'ti-taxii')
 
 // Microsoft 365 Defender
-resource m365Defender 'Microsoft
+resource m365Defender 'Microsoft.SecurityInsights/dataConnectors@2023-02-01-preview' = if (enableM365Defender) {
+  name: m365Guid
+  scope: ws
+  kind: 'Microsoft365Defender'
+  properties: {
+    tenantId: subscription().tenantId
+  }
+}
+
+// Office 365 (Exchange/SharePoint/Teams)
+resource o365 'Microsoft.SecurityInsights/dataConnectors@2023-02-01-preview' = if (enableOffice365) {
+  name: o365Guid
+  scope: ws
+  kind: 'Office365'
+  properties: {
+    tenantId: subscription().tenantId
+    dataTypes: {
+      Exchange:   { state: 'Enabled' }
+      SharePoint: { state: 'Enabled' }
+      Teams:      { state: 'Enabled' }
+    }
+  }
+}
+
+// Threat Intelligence (built-in)
+resource tiBuiltIn 'Microsoft.SecurityInsights/dataConnectors@2023-02-01-preview' = if (enableThreatIntel) {
+  name: tiGuid
+  scope: ws
+  kind: 'ThreatIntelligence'
+  properties: {
+    dataTypes: { Indicators: { state: 'Enabled' } }
+  }
+}
+
+// Threat Intelligence (TAXII)
+resource tiTaxii 'Microsoft.SecurityInsights/dataConnectors@2023-02-01-preview' = if (enableTaxii) {
+  name: taxiiGuid
+  scope: ws
+  kind: 'ThreatIntelligenceTaxii'
+  properties: {
+    taxiiServer:      taxiiServer
+    collectionId:     taxiiCollectionId
+    userName:         taxiiUsername
+    password:         taxiiPassword
+    pollingFrequency: '${taxiiPollingFrequencyMins} Minutes'
+    dataTypes: { Indicators: { state: 'Enabled' } }
+  }
+}
+
+output workspaceIdOut string = ws.id
