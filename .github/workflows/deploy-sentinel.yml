@@ -19,10 +19,10 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Create RG if missing
+      - name: Ensure resource group
         env:
-          RG_NAME: rg-sentinel-demo      # change if you like
-          AZ_LOCATION: uksouth           # change region if you like
+          RG_NAME: rg-sentinel-demo        # change if you want
+          AZ_LOCATION: uksouth             # change region if you want
         run: |
           az group create -n "$RG_NAME" -l "$AZ_LOCATION"
 
