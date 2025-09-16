@@ -1,47 +1,63 @@
 targetScope = 'resourceGroup'
 
-@description('Location for resources')
-param location string = 'uksouth'
+@description('Tenant ID taken directly from deployment context')
+param tenantId string = subscription().tenantId
 
-@description('Base name for the workspace')
-param baseName string = 'sec-law-uks'
+// fixed values, no YAML params required
+var location = 'uksouth'
+var workspaceName = 'law-sentinel-jorgebernhardt.com'
 
-var workspaceName = '${baseName}-law'
-var solutionName  = 'SecurityInsights(${workspaceName})'
-
-resource law 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
+// ---------------------------
+// Log Analytics Workspace
+// ---------------------------
+resource workspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name: workspaceName
   location: location
   properties: {
     sku: { name: 'PerGB2018' }
-    retentionInDays: 30
-    features: {
-      enableLogAccessUsingOnlyResourcePermissions: true
-    }
-    publicNetworkAccessForIngestion: 'Enabled'
-    publicNetworkAccessForQuery: 'Enabled'
+    retentionInDays: 90
+  }
+  tags: {
+    environment: 'jorgebernhardt.com'
+    bicep: 'true'
   }
 }
 
+// ---------------------------
+// Enable Microsoft Sentinel
+// ---------------------------
 resource sentinel 'Microsoft.OperationsManagement/solutions@2015-11-01-preview' = {
-  name: solutionName
+  name: 'SecurityInsights(${workspaceName})'
   location: location
-  plan: {
-    name: solutionName
-    publisher: 'Microsoft'
-    product: 'OMSGallery/SecurityInsights'
-  }
   properties: {
-    workspaceResourceId: law.id
+    workspaceResourceId: workspace.id
+  }
+  plan: {
+    name: 'SecurityInsights(${workspaceName})'
+    product: 'OMSGallery/SecurityInsights'
+    publisher: 'Microsoft'
   }
 }
 
-// Connectors as a module (keeps scopes clean and avoids copy/paste typos)
-module connectors 'connectors.bicep' = {
-  name: 'sentinel-connectors'
-  params: {
-    workspaceId: law.id
-    tenantId: subscription().tenantId
+// ---------------------------
+// Entra ID (AAD) connector
+// ---------------------------
+resource aadConnector 'Microsoft.SecurityInsights/dataConnectors@2022-11-01-preview' = {
+  name: guid(workspace.id, 'aad-connector')
+  scope: workspace
+  kind: 'AAD'
+  properties: {
+    tenantId: tenantId
+    dataTypes: {
+      logs: { state: 'Enabled' }
+    }
   }
   dependsOn: [ sentinel ]
 }
+
+// ---------------------------
+// Outputs
+// ---------------------------
+output workspaceId string = workspace.id
+output sentinelId string = sentinel.id
+output connectorId string = aadConnector.id
