@@ -1,10 +1,12 @@
-@description('Azure region for resources')
+// bicep/main.bicep  (RG-scope)
+
+@description('Azure region')
 param location string = resourceGroup().location
 
 @description('Log Analytics workspace name')
 param workspaceName string = 'law-sentinel-${uniqueString(resourceGroup().id)}'
 
-@description('Retention in days for the workspace (30–730)')
+@description('Retention in days (30–730)')
 @minValue(30)
 @maxValue(730)
 param retentionDays int = 30
@@ -20,7 +22,7 @@ param retentionDays int = 30
 ])
 param workspaceSku string = 'PerGB2018'
 
-@description('Tags to apply')
+@description('Tags to apply to all resources')
 param tags object = {
   env: 'dev'
   iac: 'bicep'
@@ -45,7 +47,7 @@ resource law 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
 }
 
 //
-// Enable Microsoft Sentinel (SecurityInsights) on the workspace
+// Enable Microsoft Sentinel on the workspace
 //
 resource sentinel 'Microsoft.OperationsManagement/solutions@2015-11-01-preview' = {
   name: 'SecurityInsights(${law.name})'
