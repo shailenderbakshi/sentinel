@@ -1,4 +1,4 @@
-// bicep/main.bicep  (RG-scope)
+// RG-scope: deploy Log Analytics Workspace and enable Microsoft Sentinel
 
 @description('Azure region')
 param location string = resourceGroup().location
@@ -22,15 +22,12 @@ param retentionDays int = 30
 ])
 param workspaceSku string = 'PerGB2018'
 
-@description('Tags to apply to all resources')
+@description('Tags to apply')
 param tags object = {
   env: 'dev'
   iac: 'bicep'
 }
 
-//
-// Log Analytics Workspace
-//
 resource law 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name: workspaceName
   location: location
@@ -46,9 +43,6 @@ resource law 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   }
 }
 
-//
-// Enable Microsoft Sentinel on the workspace
-//
 resource sentinel 'Microsoft.OperationsManagement/solutions@2015-11-01-preview' = {
   name: 'SecurityInsights(${law.name})'
   location: location
