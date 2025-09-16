@@ -1,64 +1,35 @@
+name: Deploy Sentinel
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  LOCATION: uksouth
+  RESOURCE_GROUP: rg-secops-uks   # change to your RG name
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Azure login (SPN)
-        uses: azure/login@v2
+      - uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # --- Validate RG_NAME secret and create RG if missing ---
-      - name: Validate RG_NAME
-        run: |
-          if [ -z "${{ secrets.RG_NAME }}" ]; then
-            echo "::error::RG_NAME secret is missing or empty. Add it in Settings > Secrets and variables > Actions."
-            exit 1
-          fi
-          echo "Using RG_NAME=${{ secrets.RG_NAME }}"
-
-      - name: Ensure resource group exists
-        run: |
-          if ! az group show -n "${{ secrets.RG_NAME }}" >/dev/null 2>&1; then
-            echo "RG not found, creating..."
-            az group create -n "${{ secrets.RG_NAME }}" -l "${{ env.LOCATION }}"
-          else
-            echo "RG exists."
-          fi
-
-      # --- RG-scope deployment (LAW + Sentinel + connectors) ---
-      - name: Deploy RG scope (main.bicep)
-        uses: azure/arm-deploy@v2
+      - uses: azure/arm-deploy@v2
         with:
           scope: resourcegroup
           subscriptionId: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-          resourceGroupName: ${{ secrets.RG_NAME }}
+          resourceGroupName: ${{ env.RESOURCE_GROUP }}
           region: ${{ env.LOCATION }}
           template: bicep/main.bicep
           parameters: >
+            tenantId=${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
             location=${{ env.LOCATION }}
-            baseName=${{ env.BASENAME }}
-
-      - name: Resolve LAW resource ID
-        id: law
-        run: |
-          LAW_ID=$(az resource show \
-            --resource-group "${{ secrets.RG_NAME }}" \
-            --resource-type "Microsoft.OperationalInsights/workspaces" \
-            --name "${{ env.BASENAME }}-law" \
-            --query id -o tsv)
-          echo "law_id=$LAW_ID" >> $GITHUB_OUTPUT
-          echo "LAW_ID=$LAW_ID"
-
-      - name: Deploy subscription scope (Azure Activity -> LAW)
-        if: ${{ steps.law.outputs.law_id != '' }}
-        uses: azure/arm-deploy@v2
-        with:
-          scope: subscription
-          subscriptionId: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-          region: ${{ env.LOCATION }}
-          template: bicep/sub-azure-activity.bicep
-          parameters: >
-            lawResourceId='${{ steps.law.outputs.law_id }}'
