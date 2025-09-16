@@ -11,7 +11,7 @@ permissions:
 
 env:
   LOCATION: uksouth
-  RESOURCE_GROUP: rg-secops-uks   # your RG name
+  RESOURCE_GROUP: rg-secops-uks   # change if you want another RG
 
 jobs:
   deploy:
@@ -23,7 +23,7 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Ensure resource group exists (create if missing)
+      - name: Create resource group (idempotent)
         run: |
           az group create -n "${{ env.RESOURCE_GROUP }}" -l "${{ env.LOCATION }}"
 
