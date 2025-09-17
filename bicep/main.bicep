@@ -1,20 +1,21 @@
 targetScope = 'resourceGroup'
 
-var location      = 'uksouth'
-var workspaceName = 'law-sentinel'
+var location         = 'uksouth'
+var workspaceName    = 'law-sentinel'
+var retentionInDays  = 90
 
-/* Log Analytics Workspace */
+// --- Log Analytics Workspace ---
 resource workspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name: workspaceName
   location: location
   properties: {
     sku: { name: 'PerGB2018' }
-    retentionInDays: 90
+    retentionInDays: retentionInDays
   }
 }
 
-/* (optional) Legacy Sentinel solution – still fine */
-resource sentinelSolution 'Microsoft.OperationsManagement/solutions@2015-11-01-preview' = {
+// --- Sentinel (solution) ---
+resource sentinel 'Microsoft.OperationsManagement/solutions@2015-11-01-preview' = {
   name: 'SecurityInsights(${workspaceName})'
   location: location
   properties: {
@@ -28,19 +29,13 @@ resource sentinelSolution 'Microsoft.OperationsManagement/solutions@2015-11-01-p
   }
 }
 
-/* REQUIRED: Onboard workspace to Sentinel (use preview API that supports onboardingState) */
-resource sentinelOnboarding 'Microsoft.SecurityInsights/onboardingStates@2022-11-01-preview' = {
+// --- Onboard Sentinel (preview API; no properties payload) ---
+resource onboardingStates 'Microsoft.SecurityInsights/onboardingStates@2022-12-01-preview' = {
   name: 'default'
   scope: workspace
-  properties: {
-    onboardingState: 'Onboarded'
-  }
-  dependsOn: [
-    workspace
-  ]
 }
 
-/* Outputs */
+// --- Outputs (for the sub-scope Azure Activity step) ---
 output workspaceId   string = workspace.id
 output workspaceName string = workspace.name
-output sentinelId    string = sentinelSolution.id
+output sentinelId    string = sentinel.id
