@@ -1,5 +1,4 @@
-name: Deploy Sentinel
-
+name: Deploy Sentinel + Azure Activity
 on:
   push:
     branches: [ main ]
@@ -11,7 +10,7 @@ permissions:
 
 env:
   LOCATION: uksouth
-  RESOURCE_GROUP: rg-secops-uks   # change if you want another RG
+  RESOURCE_GROUP: rg-secops-uks
 
 jobs:
   deploy:
@@ -23,14 +22,28 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Create resource group (idempotent)
-        run: |
-          az group create -n "${{ env.RESOURCE_GROUP }}" -l "${{ env.LOCATION }}"
+      # Create RG (idempotent)
+      - name: Create resource group
+        run: az group create -n "${{ env.RESOURCE_GROUP }}" -l "${{ env.LOCATION }}"
 
-      - uses: azure/arm-deploy@v2
+      # 1) RG-scope: deploy Sentinel (LAW + solution)
+      - name: Deploy Sentinel (RG scope)
+        id: rgdeploy
+        uses: azure/arm-deploy@v2
         with:
           scope: resourcegroup
           subscriptionId: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
           resourceGroupName: ${{ env.RESOURCE_GROUP }}
           region: ${{ env.LOCATION }}
           template: bicep/main.bicep
+
+      # 2) Sub-scope: route Azure Activity -> LAW using output from step 1
+      - name: Enable Azure Activity (subscription scope)
+        uses: azure/arm-deploy@v2
+        with:
+          scope: subscription
+          subscriptionId: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          region: ${{ env.LOCATION }}
+          template: bicep/sub-azure-activity.bicep
+          parameters: >
+            lawResourceId=${{ fromJson(steps.rgdeploy.outputs.deploymentOutputs).workspaceId.value }}
