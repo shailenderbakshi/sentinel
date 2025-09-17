@@ -1,10 +1,9 @@
 targetScope = 'resourceGroup'
 
-/* ---- settings ---- */
 var location      = 'uksouth'
 var workspaceName = 'law-sentinel'
 
-/* ---- Log Analytics Workspace ---- */
+/* Log Analytics Workspace */
 resource workspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name: workspaceName
   location: location
@@ -14,7 +13,7 @@ resource workspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   }
 }
 
-/* ---- (optional but fine) Sentinel solution resource ---- */
+/* (optional) Legacy Sentinel solution – still fine */
 resource sentinelSolution 'Microsoft.OperationsManagement/solutions@2015-11-01-preview' = {
   name: 'SecurityInsights(${workspaceName})'
   location: location
@@ -25,20 +24,23 @@ resource sentinelSolution 'Microsoft.OperationsManagement/solutions@2015-11-01-p
     name: 'SecurityInsights(${workspaceName})'
     product: 'OMSGallery/SecurityInsights'
     publisher: 'Microsoft'
-    promotionCode: '' // must be a string, cannot be null
+    promotionCode: ''
   }
 }
 
-/* ---- REQUIRED: Onboard workspace to Sentinel (new API) ---- */
-resource sentinelOnboarding 'Microsoft.SecurityInsights/onboardingStates@2024-03-01' = {
+/* REQUIRED: Onboard workspace to Sentinel (use preview API that supports onboardingState) */
+resource sentinelOnboarding 'Microsoft.SecurityInsights/onboardingStates@2022-11-01-preview' = {
   name: 'default'
-  scope: workspace             // extension resource on the LAW
+  scope: workspace
   properties: {
     onboardingState: 'Onboarded'
   }
+  dependsOn: [
+    workspace
+  ]
 }
 
-/* ---- Outputs (used by the workflow for the sub step) ---- */
+/* Outputs */
 output workspaceId   string = workspace.id
 output workspaceName string = workspace.name
 output sentinelId    string = sentinelSolution.id
