@@ -1,24 +1,22 @@
 targetScope = 'subscription'
-param workspaceId string
-param diagName string = 'send-activity-to-law'
+
+@description('Resource ID of the target Log Analytics workspace')
+param lawResourceId string
 
 resource subDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
-  name: diagName
+  name: 'Send-Subscription-Activity-to-LAW'
   scope: subscription()
   properties: {
-    workspaceId: workspaceId
+    workspaceId: lawResourceId
     logs: [
-      { category: 'Administrative', enabled: true }
-      { category: 'ServiceHealth', enabled: true }
-      { category: 'ResourceHealth', enabled: true }
-      { category: 'Alert', enabled: true }
-      { category: 'Security', enabled: true }
-      { category: 'Recommendation', enabled: true }
-      { category: 'Policy', enabled: true }
-      { category: 'Autoscale', enabled: true }
-      { category: 'ResourceNotifications', enabled: true }
-      { category: 'Maintenance', enabled: true }
+      { category: 'Administrative',  enabled: true }
+      { category: 'Security',        enabled: true }
+      { category: 'ServiceHealth',   enabled: true }
+      { category: 'Alert',           enabled: true }
+      { category: 'Recommendation',  enabled: true }
+      { category: 'Policy',          enabled: true }
+      { category: 'Autoscale',       enabled: true }
+      { category: 'ResourceHealth',  enabled: true }
     ]
   }
 }
-
